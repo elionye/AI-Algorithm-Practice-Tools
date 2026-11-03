@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heuristic Search Simulator (Greedy vs A*)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 { margin-top: 0; margin-bottom: 5px; }
+        .container {
+            display: flex;
+            flex-direction: column;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-width: 850px;
+            width: 100%;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        select, button {
+            padding: 10px 15px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button {
+            background-color: #6f42c1;
+            color: white;
+            border: none;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #59339d; }
+        .reveal-btn { background-color: #28a745; }
+        .reveal-btn:hover { background-color: #218838; }
+        canvas {
+            background-color: #ffffff;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            cursor: default;
+            margin-bottom: 20px;
+        }
+        .instructions {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .legend {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            justify-content: center;
+        }
+        .legend span { display: flex; align-items: center; gap: 5px; }
+        .results-box {
+            display: none;
+            background-color: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border: 1px solid #bee5eb;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .node-order {
+            font-weight: bold;
+            font-size: 16px;
+            color: #d9534f;
+            letter-spacing: 1px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Heuristic Search Simulator</h1>
+    
+    <div class="instructions">
+        <strong>Task:</strong> Find the sequence of nodes EXPANDED by the selected algorithm from Start (Green) to Goal (Red).<br>
+        <strong>Rules:</strong><br>
+        1. <strong>Greedy Search:</strong> Sort frontier purely by lowest <em>h(n)</em> (straight-line distance badge).<br>
+        2. <strong>A* Search:</strong> Sort frontier by lowest <em>f(n) = g(n) + h(n)</em> (path cost so far + heuristic badge).<br>
+        3. <strong>Tie-breaker:</strong> If values are identical, expand in alphabetical order.<br>
+        4. We are using Graph Search (keep an "Explored" set of popped nodes to skip revisiting).
+    </div>
+
+    <div class="legend">
+        <span><div style="width: 15px; height: 15px; background: white; border: 2px solid #666;"></div> Edge Box = g(n) cost</span>
+        <span><div style="width: 15px; height: 15px; background: #ffc107; border: 1px solid #d39e00;"></div> Yellow Badge = h(n) value</span>
+    </div>
+
+    <div class="controls">
+        <button onclick="generateNewGraph()">Generate Clean Map</button>
+        <select id="algo-select">
+            <option value="GREEDY">Greedy Best-First Search (h)</option>
+            <option value="ASTAR">A* Search (g + h)</option>
+        </select>
+        <button class="reveal-btn" onclick="revealAnswer()">Reveal Answer</button>
+    </div>
+
+    <canvas id="graphCanvas" width="810" height="420"></canvas>
+
+    <div class="results-box" id="results">
+        <p><strong>Algorithm:</strong> <span id="res-algo"></span></p>
+        <p><strong>Expansion Order (with evaluations):</strong> <br><span class="node-order" id="res-expanded"></span></p>
+        <p><strong>Final Path Found:</strong> <span id="res-path"></span></p>
+        <p><strong>Total Path Cost (g):</strong> <span id="res-cost"></span></p>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('graphCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let nodes = {};
+    let adjacencyList = {};
+    let startNode = '';
+    let goalNode = '';
+
+    function generateNewGraph() {
+        document.getElementById('results').style.display = 'none';
+        const numNodes = 8;
+        const labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+        nodes = {};
+        adjacencyList = {};
+        
+        // 1. Highly Spaced-out Node Placement (min 150px apart)
+        labels.forEach(label => {
+            let placed = false;
+            let attempts = 0;
+            while (!placed && attempts < 300) {
+                let x = Math.floor(Math.random() * 680) + 65;
+                let y = Math.floor(Math.random() * 290) + 65;
+                let collision = false;
+                
+                for (let otherLabel in nodes) {
+                    let dx = x - nodes[otherLabel].x;
+                    let dy = y - nodes[otherLabel].y;
+                    if (Math.sqrt(dx*dx + dy*dy) < 150) { 
+                        collision = true;
+                        break;
+                    }
+                }
+                
+                if (!collision) {
+                    nodes[label] = { x: x, y: y, h: 0 };
+                    placed = true;
+                }
+                attempts++;
+            }
+            adjacencyList[label] = [];
+        });
+
+        // 2. Select Start Node
+        startNode = labels[Math.floor(Math.random() * numNodes)];
+        
+        // 3. Select Goal Node (forced to be far away)
+        let sortedGoals = labels.filter(l => l !== startNode).sort((a,b) => {
+            return Math.hypot(nodes[b].x - nodes[startNode].x, nodes[b].y - nodes[startNode].y) - 
+                   Math.hypot(nodes[a].x - nodes[startNode].x, nodes[a].y - nodes[startNode].y);
+        });
+        goalNode = sortedGoals[0]; // Furthest node guaranteed
+
+        // 4. Calculate Heuristics
+        for (let label in nodes) {
+            let dx = nodes[label].x - nodes[goalNode].x;
+            let dy = nodes[label].y - nodes[goalNode].y;
+            nodes[label].h = Math.floor(Math.sqrt(dx*dx + dy*dy) / 10);
+        }
+
+        // 5. Geographical Connections
+        for (let i = 1; i < numNodes; i++) {
+            let u = labels[i];
+            let closest = null;
+            let minDist = Infinity;
+            
+            for (let j = 0; j < i; j++) {
+                let v = labels[j];
+                let dist = Math.hypot(nodes[u].x - nodes[v].x, nodes[u].y - nodes[v].y);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = v;
+                }
+            }
+            let v = closest;
+            let trueDist = Math.floor(minDist / 10);
+            let weight = trueDist + Math.floor(Math.random() * 4) + 1; 
+            
+            adjacencyList[u].push({ id: v, weight: weight });
+            adjacencyList[v].push({ id: u, weight: weight });
+        }
+
+        // Add 2 extra non-crossing edges
+        let potentialEdges = [];
+        for (let i = 0; i < numNodes; i++) {
+            for (let j = i + 1; j < numNodes; j++) {
+                let u = labels[i];
+                let v = labels[j];
+                if (!adjacencyList[u].find(n => n.id === v)) {
+                    let dist = Math.hypot(nodes[u].x - nodes[v].x, nodes[u].y - nodes[v].y);
+                    if (dist < 260) { // Keep extra links relatively short
+                        potentialEdges.push({u, v, dist});
+                    }
+                }
+            }
+        }
+        potentialEdges.sort((a, b) => a.dist - b.dist);
+        let edgesAdded = 0;
+        for (let edge of potentialEdges) {
+            if (edgesAdded >= 2) break; 
+            let trueDist = Math.floor(edge.dist / 10);
+            let weight = trueDist + Math.floor(Math.random() * 4) + 1;
+            adjacencyList[edge.u].push({ id: edge.v, weight: weight });
+            adjacencyList[edge.v].push({ id: edge.u, weight: weight });
+            edgesAdded++;
+        }
+
+        drawGraph();
+    }
+
+    function drawGraph() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // LAYER 1: Draw lines
+        let drawnEdges = new Set();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#aaa';
+        for (let u in adjacencyList) {
+            adjacencyList[u].forEach(neighbor => {
+                let v = neighbor.id;
+                let edgeKey = u < v ? u+v : v+u;
+                if (!drawnEdges.has(edgeKey)) {
+                    drawnEdges.add(edgeKey);
+                    ctx.beginPath();
+                    ctx.moveTo(nodes[u].x, nodes[u].y);
+                    ctx.lineTo(nodes[v].x, nodes[v].y);
+                    ctx.stroke();
+                }
+            });
+        }
+
+        // LAYER 2: Draw Edge Weights
+        drawnEdges.clear();
+        for (let u in adjacencyList) {
+            adjacencyList[u].forEach(neighbor => {
+                let v = neighbor.id;
+                let edgeKey = u < v ? u+v : v+u;
+                if (!drawnEdges.has(edgeKey)) {
+                    drawnEdges.add(edgeKey);
+                    let midX = (nodes[u].x + nodes[v].x) / 2;
+                    let midY = (nodes[u].y + nodes[v].y) / 2;
+                    
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(midX - 14, midY - 12, 28, 24);
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeStyle = '#666';
+                    ctx.strokeRect(midX - 14, midY - 12, 28, 24);
+                    
+                    ctx.fillStyle = 'black';
+                    ctx.font = 'bold 14px sans-serif';
+                    ctx.fillText(neighbor.weight, midX, midY);
+                }
+            });
+        }
+
+        // LAYER 3: Draw Nodes
+        for (let label in nodes) {
+            ctx.beginPath();
+            ctx.lineWidth = 2;
+            ctx.arc(nodes[label].x, nodes[label].y, 20, 0, 2 * Math.PI);
+            if (label === startNode) {
+                ctx.fillStyle = '#28a745'; 
+                ctx.strokeStyle = '#1e7e34';
+            } else if (label === goalNode) {
+                ctx.fillStyle = '#dc3545'; 
+                ctx.strokeStyle = '#c82333';
+            } else {
+                ctx.fillStyle = '#007bff'; 
+                ctx.strokeStyle = '#0056b3';
+            }
+            ctx.fill();
+            ctx.stroke();
+            
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 16px sans-serif';
+            ctx.fillText(label, nodes[label].x, nodes[label].y);
+        }
+
+        // LAYER 4: Draw Heuristic Badges (Compact layout without "h=")
+        for (let label in nodes) {
+            let text = nodes[label].h.toString(); // Clean raw number only
+            ctx.font = 'bold 12px sans-serif';
+            let textW = ctx.measureText(text).width + 10;
+            
+            let hX = nodes[label].x + 12;
+            let hY = nodes[label].y - 25;
+            
+            ctx.fillStyle = '#ffc107';
+            ctx.strokeStyle = '#d39e00';
+            ctx.lineWidth = 1.5;
+            ctx.fillRect(hX, hY, textW, 18);
+            ctx.strokeRect(hX, hY, textW, 18);
+            
+            ctx.fillStyle = 'black';
+            ctx.fillText(text, hX + textW/2, hY + 9);
+        }
+    }
+
+    function runAlgorithm() {
+        const algo = document.getElementById('algo-select').value;
+        let frontier = [{ node: startNode, path: [startNode], g: 0, h: nodes[startNode].h }];
+        let explored = new Set();
+        let expanded = [];
+        let finalNode = null;
+
+        while (frontier.length > 0) {
+            frontier.sort((a, b) => {
+                let valA = algo === 'GREEDY' ? a.h : (a.g + a.h);
+                let valB = algo === 'GREEDY' ? b.h : (b.g + b.h);
+                
+                if (valA === valB) return a.node.localeCompare(b.node); 
+                return valA - valB;
+            });
+
+            let curr = frontier.shift();
+
+            if (explored.has(curr.node)) continue;
+            
+            explored.add(curr.node);
+            
+            let evalString = algo === 'GREEDY' 
+                ? `${curr.node}(${curr.h})` 
+                : `${curr.node}(${curr.g}+${curr.h}=${curr.g + curr.h})`;
+            expanded.push(evalString);
+
+            if (curr.node === goalNode) {
+                finalNode = curr;
+                break;
+            }
+
+            for (let neighbor of adjacencyList[curr.node]) {
+                if (!explored.has(neighbor.id)) {
+                    frontier.push({
+                        node: neighbor.id,
+                        path: [...curr.path, neighbor.id],
+                        g: curr.g + neighbor.weight,
+                        h: nodes[neighbor.id].h
+                    });
+                }
+            }
+        }
+
+        return {
+            algo: algo === 'GREEDY' ? 'Greedy Best-First Search' : 'A* Search',
+            expanded: expanded,
+            path: finalNode ? finalNode.path : ["No path found"],
+            cost: finalNode ? finalNode.g : "N/A"
+        };
+    }
+
+    function revealAnswer() {
+        const result = runAlgorithm();
+        document.getElementById('res-algo').innerText = result.algo;
+        document.getElementById('res-expanded').innerHTML = result.expanded.join(" &nbsp;➔&nbsp; ");
+        document.getElementById('res-path').innerText = result.path.join(" ➔ ");
+        document.getElementById('res-cost').innerText = result.cost;
+        document.getElementById('results').style.display = 'block';
+    }
+
+    window.onload = generateNewGraph;
+</script>
+</body>
+</html>
