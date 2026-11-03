@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Search Algorithm Simulator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 { margin-top: 0; }
+        .container {
+            display: flex;
+            flex-direction: column;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-width: 800px;
+            width: 100%;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        select, button {
+            padding: 10px 15px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button {
+            background-color: #0056b3;
+            color: white;
+            border: none;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #004494; }
+        .reveal-btn { background-color: #28a745; }
+        .reveal-btn:hover { background-color: #218838; }
+        canvas {
+            background-color: #ffffff;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            cursor: default;
+            margin-bottom: 20px;
+        }
+        .instructions {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .results-box {
+            display: none;
+            background-color: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border: 1px solid #bee5eb;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .node-order {
+            font-weight: bold;
+            font-size: 18px;
+            color: #d9534f;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>General Search Simulator</h1>
+    
+    <div class="instructions">
+        <strong>Task:</strong> Find the sequence of nodes EXPANDED by the selected algorithm from Start (Green) to Goal (Red).<br>
+        <strong>Rules:</strong><br>
+        1. We are doing <i>Graph Search</i> (keep an "Explored" set of popped nodes to skip already visited states).<br>
+        2. <strong>Tie-breaker:</strong> When adding nodes to your frontier, always organize ties in alphabetical order.<br>
+        3. Write down the order of nodes as you pop/expand them, then click Reveal to check your work!
+    </div>
+
+    <div class="controls">
+        <button onclick="generateNewGraph()">Generate New Graph</button>
+        <select id="algo-select">
+            <option value="BFS">Breadth-First Search (BFS)</option>
+            <option value="DFS">Depth-First Search (DFS)</option>
+            <option value="UCS">Uniform Cost Search (UCS)</option>
+        </select>
+        <button class="reveal-btn" onclick="revealAnswer()">Reveal Answer</button>
+    </div>
+
+    <canvas id="graphCanvas" width="760" height="400"></canvas>
+
+    <div class="results-box" id="results">
+        <p><strong>Algorithm:</strong> <span id="res-algo"></span></p>
+        <p><strong>Nodes Expanded (in order):</strong> <span class="node-order" id="res-expanded"></span></p>
+        <p><strong>Final Path Found:</strong> <span id="res-path"></span></p>
+        <p><strong>Total Cost:</strong> <span id="res-cost"></span></p>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('graphCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let nodes = {};
+    let adjacencyList = {};
+    let startNode = '';
+    let goalNode = '';
+
+    function generateNewGraph() {
+        document.getElementById('results').style.display = 'none';
+        const numNodes = 7;
+        const labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+        nodes = {};
+        adjacencyList = {};
+        
+        // Randomly place nodes
+        labels.forEach(label => {
+            nodes[label] = {
+                x: Math.floor(Math.random() * 660) + 50,
+                y: Math.floor(Math.random() * 300) + 50
+            };
+            adjacencyList[label] = [];
+        });
+
+        // Ensure graph is connected (Spanning Tree)
+        for (let i = 1; i < numNodes; i++) {
+            let u = labels[i];
+            let v = labels[Math.floor(Math.random() * i)]; // connect to a previously added node
+            let weight = Math.floor(Math.random() * 15) + 1;
+            adjacencyList[u].push({ id: v, weight: weight });
+            adjacencyList[v].push({ id: u, weight: weight });
+        }
+
+        // Add 3 random extra edges for complexity/loops
+        for(let i=0; i<3; i++) {
+            let u = labels[Math.floor(Math.random() * numNodes)];
+            let v = labels[Math.floor(Math.random() * numNodes)];
+            if (u !== v && !adjacencyList[u].find(n => n.id === v)) {
+                let weight = Math.floor(Math.random() * 15) + 1;
+                adjacencyList[u].push({ id: v, weight: weight });
+                adjacencyList[v].push({ id: u, weight: weight });
+            }
+        }
+
+        // Random Start and Goal
+        startNode = labels[Math.floor(Math.random() * numNodes)];
+        do {
+            goalNode = labels[Math.floor(Math.random() * numNodes)];
+        } while(goalNode === startNode);
+
+        drawGraph();
+    }
+
+    function drawGraph() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.lineWidth = 2;
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Draw edges
+        let drawnEdges = new Set();
+        for (let u in adjacencyList) {
+            adjacencyList[u].forEach(neighbor => {
+                let v = neighbor.id;
+                let edgeKey = u < v ? u+v : v+u;
+                if (!drawnEdges.has(edgeKey)) {
+                    drawnEdges.add(edgeKey);
+                    ctx.beginPath();
+                    ctx.moveTo(nodes[u].x, nodes[u].y);
+                    ctx.lineTo(nodes[v].x, nodes[v].y);
+                    ctx.strokeStyle = '#999';
+                    ctx.stroke();
+
+                    // Draw weight
+                    let midX = (nodes[u].x + nodes[v].x) / 2;
+                    let midY = (nodes[u].y + nodes[v].y) / 2;
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(midX - 10, midY - 10, 20, 20);
+                    ctx.fillStyle = 'black';
+                    ctx.fillText(neighbor.weight, midX, midY);
+                }
+            });
+        }
+
+        // Draw nodes
+        for (let label in nodes) {
+            ctx.beginPath();
+            ctx.arc(nodes[label].x, nodes[label].y, 20, 0, 2 * Math.PI);
+            
+            if (label === startNode) {
+                ctx.fillStyle = '#28a745'; // Green
+                ctx.strokeStyle = '#1e7e34';
+            } else if (label === goalNode) {
+                ctx.fillStyle = '#dc3545'; // Red
+                ctx.strokeStyle = '#c82333';
+            } else {
+                ctx.fillStyle = '#007bff'; // Blue
+                ctx.strokeStyle = '#0056b3';
+            }
+            
+            ctx.fill();
+            ctx.stroke();
+            
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 16px sans-serif';
+            ctx.fillText(label, nodes[label].x, nodes[label].y);
+        }
+    }
+
+    function runAlgorithm() {
+        const algo = document.getElementById('algo-select').value;
+        let frontier = [{ node: startNode, path: [startNode], cost: 0 }];
+        let explored = new Set();
+        let expanded = [];
+        let finalNode = null;
+
+        while (frontier.length > 0) {
+            // Apply Queue logic based on selected algorithm
+            if (algo === 'UCS') {
+                // Sort by cost, then alphabetical tie-breaker
+                frontier.sort((a, b) => {
+                    if (a.cost === b.cost) return a.node.localeCompare(b.node);
+                    return a.cost - b.cost;
+                });
+            }
+
+            let curr = (algo === 'DFS') ? frontier.pop() : frontier.shift();
+
+            // Graph Search: skip if already explored
+            if (explored.has(curr.node)) continue;
+            
+            explored.add(curr.node);
+            expanded.push(curr.node);
+
+            // Goal Test upon expansion
+            if (curr.node === goalNode) {
+                finalNode = curr;
+                break;
+            }
+
+            // Get neighbors and sort them
+            let neighbors = [...adjacencyList[curr.node]];
+            if (algo === 'DFS') {
+                // Reverse alphabetical for Stack to pop alphabetical first
+                neighbors.sort((a, b) => b.id.localeCompare(a.id)); 
+            } else {
+                neighbors.sort((a, b) => a.id.localeCompare(b.id));
+            }
+
+            for (let n of neighbors) {
+                if (!explored.has(n.id)) {
+                    frontier.push({
+                        node: n.id,
+                        path: [...curr.path, n.id],
+                        cost: curr.cost + n.weight
+                    });
+                }
+            }
+        }
+
+        return {
+            algo: algo,
+            expanded: expanded,
+            path: finalNode ? finalNode.path : ["No path found"],
+            cost: finalNode ? finalNode.cost : "N/A"
+        };
+    }
+
+    function revealAnswer() {
+        const result = runAlgorithm();
+        
+        document.getElementById('res-algo').innerText = result.algo;
+        document.getElementById('res-expanded').innerText = result.expanded.join(" ➔ ");
+        document.getElementById('res-path').innerText = result.path.join(" ➔ ");
+        document.getElementById('res-cost').innerText = result.cost;
+        
+        document.getElementById('results').style.display = 'block';
+    }
+
+    // Initialize first graph
+    window.onload = generateNewGraph;
+</script>
+</body>
+</html>
