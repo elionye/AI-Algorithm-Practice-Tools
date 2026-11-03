@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSP Algorithm Trace & Verify Trainer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-width: 950px;
+            width: 100%;
+        }
+        h1 { margin-top: 0; color: #2c3e50; font-size: 24px; }
+        .instructions {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .instructions ul {
+            margin: 5px 0 0 20px;
+            padding: 0;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+        select, button {
+            padding: 10px 15px;
+            font-size: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button {
+            background-color: #0056b3;
+            color: white;
+            border: none;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #004494; }
+        .verify-btn { background-color: #28a745; }
+        .verify-btn:hover { background-color: #218838; }
+        
+        .workspace {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 768px) {
+            .workspace { grid-template-columns: 1fr; }
+        }
+        .panel {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        .panel h3 {
+            margin-top: 0;
+            color: #495057;
+            font-size: 16px;
+            border-bottom: 1px solid #ced4da;
+            padding-bottom: 8px;
+        }
+        canvas {
+            background-color: #ffffff;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            display: block;
+            width: 100%;
+            height: 260px;
+        }
+        textarea {
+            width: 100%;
+            height: 250px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 13px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        .results-box {
+            display: none;
+            background-color: #d1ecf1;
+            color: #0c5460;
+            padding: 20px;
+            border: 1px solid #bee5eb;
+            border-radius: 5px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .results-box h3 {
+            margin-top: 0;
+            color: #0c5460;
+            font-size: 17px;
+            border-bottom: 1px solid #bee5eb;
+            padding-bottom: 6px;
+        }
+        .log-list {
+            font-family: monospace;
+            background: #fff;
+            padding: 10px;
+            border: 1px solid #bee5eb;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 0;
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>CSP Algorithm Trace & Verify Trainer</h1>
+    
+    <div class="instructions">
+        <strong>How to Use This Trainer:</strong>
+        <ul>
+            <li><strong>Step 1:</strong> Click <em>"Generate New Problem"</em> to spin up a randomized CSP graph with variables, domains, and edges.</li>
+            <li><strong>Step 2:</strong> Work out the algorithm (e.g., AC-3 queue operations or Backtracking assignment sequence) on your own paper/scratchpad.</li>
+            <li><strong>Step 3:</strong> Type your expected sequence of steps into the text workspace below.</li>
+            <li><strong>Step 4:</strong> Click <em>"Verify My Trace"</em> to run the formal algorithm live and compare your work against the authoritative execution log!</li>
+        </ul>
+    </div>
+
+    <div class="controls">
+        <div>
+            <label for="algo-select"><strong>Algorithm to Practice:</strong></label>
+            <select id="algo-select" onchange="updatePromptHint()">
+                <option value="AC3">AC-3 Arc Consistency (Queue & Revision Log)</option>
+                <option value="BACKTRACK">Backtracking Search (Assignment Sequence)</option>
+            </select>
+        </div>
+        <button onclick="generateNewProblem()">Generate New Problem</button>
+        <button class="verify-btn" onclick="verifyTrace()">Verify My Trace</button>
+    </div>
+
+    <div class="workspace">
+        <!-- Left Panel: Problem Graph & Formal Spec -->
+        <div class="panel">
+            <h3>Problem Constraint Graph</h3>
+            <canvas id="cspCanvas" width="400" height="260"></canvas>
+            <p id="spec-text" style="font-size: 13px; margin: 10px 0 0 0; line-height: 1.4;"></p>
+        </div>
+
+        <!-- Right Panel: Student Scratchpad -->
+        <div class="panel">
+            <h3 id="scratchpad-title">Your Scratchpad / Written Trace</h3>
+            <textarea id="student-trace" placeholder="Type your step-by-step algorithmic trace here...
+Example for AC-3:
+(V1, V2) checked, prune color from V2
+(V2, V3) checked, no change"></textarea>
+        </div>
+    </div>
+
+    <div class="results-box" id="results-box">
+        <h3>Authoritative Algorithm Execution Log</h3>
+        <p id="verification-feedback" style="font-weight: bold; margin-bottom: 8px;"></p>
+        <ul class="log-list" id="authoritative-log"></ul>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('cspCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let variables = {};
+    let constraints = [];
+    let domains = {};
+    const baseDomain = ['Red', 'Green', 'Blue'];
+
+    function updatePromptHint() {
+        const algo = document.getElementById('algo-select').value;
+        const scratchpad = document.getElementById('student-trace');
+        if (algo === 'AC3') {
+            document.getElementById('scratchpad-title').innerText = 'Your AC-3 Trace (Arcs popped & revisions)';
+            scratchpad.placeholder = 'Type your expected queue processing and domain revisions:\n(V1, V2) -> revised\n(V3, V2) -> no change';
+        } else {
+            document.getElementById('scratchpad-title').innerText = 'Your Backtracking Trace (Assignments)';
+            scratchpad.placeholder = 'Type your expected variable assignments:\nV1 = Red\nV2 = Green\nV3 = Blue (Conflict -> Backtrack)';
+        }
+    }
+
+    function generateNewProblem() {
+        document.getElementById('results-box').style.display = 'none';
+        variables = {};
+        constraints = [];
+        domains = {};
+
+        const nodeNames = ['A', 'B', 'C', 'D', 'E'];
+        const sectors = [
+            {x: 80, y: 70}, {x: 200, y: 50}, {x: 320, y: 70},
+            {x: 120, y: 200}, {x: 280, y: 200}
+        ];
+
+        sectors.sort(() => Math.random() - 0.5);
+
+        nodeNames.forEach((name, idx) => {
+            variables[name] = { x: sectors[idx].x, y: sectors[idx].y };
+            domains[name] = [...baseDomain];
+        });
+
+        // Build edges
+        for (let i = 0; i < nodeNames.length; i++) {
+            for (let j = i + 1; j < nodeNames.length; j++) {
+                let u = nodeNames[i];
+                let v = nodeNames[j];
+                let dist = Math.hypot(variables[u].x - variables[v].x, variables[u].y - variables[v].y);
+                if (dist < 160 && Math.random() < 0.6) {
+                    constraints.push([u, v]);
+                    constraints.push([v, u]); // Directed arcs for AC-3
+                }
+            }
+        }
+
+        // Ensure graph connectivity
+        for (let i = 1; i < nodeNames.length; i++) {
+            let u = nodeNames[i];
+            let prev = nodeNames[i - 1];
+            if (!constraints.some(c => c[0] === u && c[1] === prev)) {
+                constraints.push([u, prev]);
+                constraints.push([prev, u]);
+            }
+        }
+
+        redrawCanvas();
+
+        let constraintPairs = [];
+        for(let i=0; i<constraints.length; i+=2) {
+            constraintPairs.push(`(${constraints[i][0]}, ${constraints[i][1]})`);
+        }
+
+        document.getElementById('spec-text').innerHTML = `
+            <strong>Variables ($X$):</strong> {${nodeNames.join(', ')}}\\br
+            <strong>Domains ($D$):</strong> {Red, Green, Blue}\\br
+            <strong>Constraints ($C$):</strong> ${constraintPairs.join(', ')}
+        `.replace(/\\br/g, '<br>');
+    }
+
+    function redrawCanvas() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw undirected unique edges
+        let drawn = new Set();
+        constraints.forEach(([u, v]) => {
+            let key = u < v ? u + '-' + v : v + '-' + u;
+            if (!drawn.has(key)) {
+                drawn.add(key);
+                let n1 = variables[u];
+                let n2 = variables[v];
+                ctx.beginPath();
+                ctx.moveTo(n1.x, n1.y);
+                ctx.lineTo(n2.x, n2.y);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#adb5bd';
+                ctx.stroke();
+            }
+        });
+
+        // Draw nodes
+        for (let u in variables) {
+            let node = variables[u];
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, 22, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = '#007bff';
+            ctx.stroke();
+
+            ctx.fillStyle = '#212529';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(u, node.x, node.y);
+        }
+    }
+
+    // Formal AC-3 Execution Engine to generate authoritative logs
+    function runAC3() {
+        let queue = [...constraints]; // all directed arcs
+        let log = [];
+        let curDomains = JSON.parse(JSON.stringify(domains));
+
+        log.push(`Initial Queue contains ${queue.length} arcs.`);
+
+        while (queue.length > 0) {
+            let [Xi, Xj] = queue.shift();
+            log.push(`Popped arc (${Xi}, ${Xj}) from queue.`);
+
+            let revised = false;
+            let currentDi = [...curDomains[Xi]];
+
+            for (let x of currentDi) {
+                // Check if there is some y in curDomains[Xj] such that x != y
+                let satisfyingYExists = curDomains[Xj].some(y => x !== y);
+                if (!satisfyingYExists) {
+                    // Remove x from curDomains[Xi]
+                    curDomains[Xi] = curDomains[Xi].filter(val => val !== x);
+                    revised = true;
+                    log.push(`  -> Removed value '${x}' from domain of ${Xi} (no consistent value in ${Xj}).`);
+                }
+            }
+
+            if (revised) {
+                log.push(`  -> Domain of ${Xi} was revised to [${curDomains[Xi].join(', ')}].`);
+                if (curDomains[Xi].length === 0) {
+                    log.push(`  -> FAILURE: Domain of ${Xi} is empty! Inconsistent CSP.`);
+                    return log;
+                }
+                // Add all neighbors of Xi (except Xj) back to queue
+                let neighbors = constraints.filter(c => c[0] === Xi && c[1] !== Xj);
+                neighbors.forEach(arc => {
+                    queue.push(arc);
+                    log.push(`  -> Added neighbor arc (${arc[0]}, ${arc[1]}) back to queue.`);
+                });
+            } else {
+                log.push(`  -> No revision needed for (${Xi}, ${Xj}).`);
+            }
+        }
+        log.push(`AC-3 completed successfully. Arc consistency achieved!`);
+        return log;
+    }
+
+    // Formal Backtracking Execution Engine
+    function runBacktracking() {
+        let log = [];
+        let assignment = {};
+        let nodeKeys = Object.keys(variables);
+
+        function backtrack(index) {
+            if (index === nodeKeys.length) {
+                log.push(`Solution found: ${JSON.stringify(assignment)}`);
+                return true;
+            }
+            let varName = nodeKeys[index];
+            log.push(`Selecting variable ${varName}.`);
+
+            for (let val of baseDomain) {
+                log.push(`  Trying assignment ${varName} = ${val}.`);
+                // Check constraints with already assigned neighbors
+                let conflict = false;
+                constraints.forEach(([u, v]) => {
+                    if (u === varName && assignment[v] === val) conflict = true;
+                });
+
+                if (!conflict) {
+                    assignment[varName] = val;
+                    log.push(`  -> Consistent! Proceeding to next variable.`);
+                    if (backtrack(index + 1)) return true;
+                    log.push(`  -> Backtracking from ${varName} = ${val}...`);
+                    delete assignment[varName];
+                } else {
+                    log.push(`  -> Conflict detected with neighbor! Value ${val} rejected.`);
+                }
+            }
+            return false;
+        }
+
+        backtrack(0);
+        return log;
+    }
+
+    function verifyTrace() {
+        const algo = document.getElementById('algo-select').value;
+        const studentText = document.getElementById('student-trace').value.trim();
+        
+        let authoritativeLog = (algo === 'AC3') ? runAC3() : runBacktracking();
+
+        const logContainer = document.getElementById('authoritative-log');
+        logContainer.innerHTML = '';
+        authoritativeLog.forEach(line => {
+            let li = document.createElement('li');
+            li.innerText = line;
+            logContainer.appendChild(li);
+        });
+
+        const feedback = document.getElementById('verification-feedback');
+        if (studentText.length > 5) {
+            feedback.style.color = '#155724';
+            feedback.innerText = `Trace submitted! Compare your scratchpad steps line-by-line with the authoritative execution log below to verify your logic.`;
+        } else {
+            feedback.style.color = '#856404';
+            feedback.innerText = `Note: Your scratchpad was empty or brief. Review the authoritative engine log below to study the correct step sequence.`;
+        }
+
+        document.getElementById('results-box').style.display = 'block';
+    }
+
+    window.onload = generateNewProblem;
+</script>
+</body>
+</html>
